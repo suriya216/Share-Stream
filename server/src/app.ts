@@ -1,5 +1,8 @@
 import express from "express";
+import { existsSync } from "node:fs";
 import { createServer } from "node:http";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Server } from "socket.io";
 import type { ClientToServer, ServerToClient } from "../../shared/types.js";
 import { authRouter, recordHistory, verifyToken } from "./auth.js";
@@ -22,6 +25,15 @@ export function createApp({ accounts = false }: AppOptions = {}) {
   });
   app.get("/health", (_req, res) => res.json({ ok: true, accounts }));
   if (accounts) app.use("/api", authRouter());
+
+  // Serve the built client (production) from the same origin
+  const clientDist = fileURLToPath(new URL("../../../../client/dist", import.meta.url));
+  if (existsSync(clientDist)) {
+    app.use(express.static(clientDist));
+    app.get(/^(?!\/(api|socket\.io|health)).*/, (_req, res) =>
+      res.sendFile(join(clientDist, "index.html")),
+    );
+  }
 
   const http = createServer(app);
   const io = new Server<ClientToServer, ServerToClient>(http, { cors: { origin } });

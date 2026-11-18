@@ -1,5 +1,6 @@
 export const serverUrl: string =
-  import.meta.env.VITE_SERVER_URL ?? `${location.protocol}//${location.hostname}:4000`;
+  import.meta.env.VITE_SERVER_URL ??
+  (import.meta.env.PROD ? location.origin : `${location.protocol}//${location.hostname}:4000`);
 
 const KEY = "sharestream.account";
 
