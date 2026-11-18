@@ -2,6 +2,8 @@
 
 Watch a video together, in sync. The host starts a session and shares a 4-character code; guests join with it. Only the host controls play, pause and seek.
 
+**Live demo:** <https://stream-share-vv00.onrender.com/> (free Render instance, so the first load after idle can take ~50s)
+
 **Stack:** TypeScript, React 18 + Vite, Node + Express, Socket.IO, hls.js. MongoDB is optional (accounts and history).
 
 ## Features
@@ -15,13 +17,14 @@ Watch a video together, in sync. The host starts a session and shares a 4-charac
 
 ## Getting started
 
-Requires Node 18+ and npm.
+Requires Node 20.19+ (or 22.12+) and npm.
 
 ```bash
 npm install
 npm run dev        # server on :4000, client on :5173
 npm test           # server tests (vitest)
-npm run build      # type-check/build server and client
+npm run build      # build server (dist/) and client (client/dist)
+npm start -w server  # production: serves API, Socket.IO and the built client
 ```
 
 Open http://localhost:5173, start a session as host, and open the same page in another tab or device to join with the code.
@@ -41,17 +44,29 @@ The client detects this through `GET /health` (`{ ok, accounts }`).
 | Variable | Where | Default | Purpose |
 |---|---|---|---|
 | `PORT` | server | `4000` | HTTP/Socket.IO port |
-| `CLIENT_ORIGIN` | server | `http://localhost:5173` | Allowed CORS origin |
+| `CLIENT_ORIGIN` | server | `http://localhost:5173` | Allowed CORS origin (set to your public URL in production) |
 | `MONGODB_URI` | server | unset | Enables accounts + history |
 | `JWT_SECRET` | server | random per start | Signs login tokens; set it, or logins reset on restart |
-| `VITE_SERVER_URL` | client | `<page protocol>//<page host>:4000` | Server URL |
+| `VITE_SERVER_URL` | client (build time) | dev: `<page host>:4000`; production build: same origin | Server URL |
+
+## Deployment (Render)
+
+The server also serves the built client, so one Web Service runs everything.
+
+| Setting | Value |
+|---|---|
+| Build command | `npm install && npm run build` |
+| Start command | `npm start -w server` |
+| Environment | `CLIENT_ORIGIN=https://<your-service>.onrender.com`, `JWT_SECRET=<long random string>`, optional `MONGODB_URI` |
+
+Sessions are in memory, so a restart or free-tier sleep ends active sessions.
 
 ## Project structure
 
 ```
 server/src/
   index.ts        Entry point; connects MongoDB if configured
-  app.ts          Express + Socket.IO setup, CORS, expiry sweeper (every 60s)
+  app.ts          Express + Socket.IO setup, CORS, static client serving, expiry sweeper (every 60s)
   sessions.ts     In-memory SessionStore, code generation, TTL/limits
   socket.ts       Socket event handlers, source validation, playback projection
   ratelimit.ts    Fixed-window FailureLimiter
@@ -86,14 +101,10 @@ shared/types.ts   Event and payload types used by both sides
 | `POST /api/auth/login` | → `{ token, username }`; 5 failures/min/IP, then 429 |
 | `GET /api/history` | Bearer token required; last 20 sessions |
 
-Server tests start an in-memory MongoDB; the first run downloads ~600 MB and can take a few minutes.
+Server tests use an in-memory MongoDB; the first run downloads it and can take a few minutes.
 
 ## How sync works
 
 The host's player is the source of truth. On play, pause or seek, and every 3s while playing, the host sends `{position, playing}`. The server stores it and relays it to guests with the position projected to send time, so no clock sync is needed. Guests seek only if more than 0.5s off. Late joiners receive the current state in the join ack. If the browser blocks autoplay, the guest sees a "Tap to sync" button.
 
 YouTube's IFrame API has no seek event, so the host's changes are detected by polling every 500ms.
-
-## Roadmap
-
-- [ ] Redis session store + Socket.IO Redis adapter, Dockerfile (deferred: only needed to run several server instances; sessions are currently in memory, so restarting the server ends them)
